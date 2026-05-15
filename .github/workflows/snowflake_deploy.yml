@@ -34,11 +34,11 @@ jobs:
 
           fi
 
-      # Install Snowflake Python Connector
-      - name: Install Snowflake Connector
+      # Install Required Packages
+      - name: Install Python Packages
 
         run: |
-          pip install snowflake-connector-python
+          pip install snowflake-connector-python cryptography
 
       # Deploy SQL Files
       - name: Deploy Snowflake Objects
@@ -46,8 +46,9 @@ jobs:
         env:
           SNOWFLAKE_ACCOUNT: ${{ secrets.SNOWFLAKE_ACCOUNT }}
           SNOWFLAKE_USER: ${{ secrets.SNOWFLAKE_USER }}
-          SNOWFLAKE_PASSWORD: ${{ secrets.SNOWFLAKE_PASSWORD }}
+          SNOWFLAKE_PRIVATE_KEY: ${{ secrets.SNOWFLAKE_PRIVATE_KEY }}
           SNOWFLAKE_WAREHOUSE: ${{ secrets.SNOWFLAKE_WAREHOUSE }}
+          SNOWFLAKE_ROLE: ${{ secrets.SNOWFLAKE_ROLE }}
           ENV: ${{ env.ENV }}
 
         run: |
@@ -57,13 +58,32 @@ jobs:
           import snowflake.connector
           import os
 
+          from cryptography.hazmat.primitives import serialization
+          from cryptography.hazmat.backends import default_backend
+
           print(f"Starting deployment for environment: {os.environ['ENV']}")
 
+          # Load private key
+          private_key = serialization.load_pem_private_key(
+              os.environ['SNOWFLAKE_PRIVATE_KEY'].encode(),
+              password=None,
+              backend=default_backend()
+          )
+
+          # Convert key format for Snowflake connector
+          pkb = private_key.private_bytes(
+              encoding=serialization.Encoding.DER,
+              format=serialization.PrivateFormat.PKCS8,
+              encryption_algorithm=serialization.NoEncryption()
+          )
+
+          # Connect to Snowflake
           conn = snowflake.connector.connect(
               user=os.environ['SNOWFLAKE_USER'],
-              password=os.environ['SNOWFLAKE_PASSWORD'],
               account=os.environ['SNOWFLAKE_ACCOUNT'],
-              warehouse=os.environ['SNOWFLAKE_WAREHOUSE']
+              private_key=pkb,
+              warehouse=os.environ['SNOWFLAKE_WAREHOUSE'],
+              role=os.environ['SNOWFLAKE_ROLE']
           )
 
           cursor = conn.cursor()
@@ -76,7 +96,7 @@ jobs:
 
                   line = line.strip()
 
-                  # Skip comments
+                  # Skip comments and blank lines
                   if line.startswith("--") or line == "":
                       continue
 
@@ -86,7 +106,7 @@ jobs:
 
                       sql = sql_file.read()
 
-                      # Replace environment variable
+                      # Replace ENV variable
                       sql = sql.replace("&{env}", os.environ['ENV'])
 
                       cursor.execute(sql)
