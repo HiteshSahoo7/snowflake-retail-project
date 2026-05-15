@@ -7,7 +7,6 @@ on:
       - uat
       - main
 
-      
 jobs:
 
   deploy:
@@ -35,13 +34,13 @@ jobs:
 
           fi
 
-      # Install SnowSQL
-      - name: Install SnowSQL
+      # Install Snowflake Python Connector
+      - name: Install Snowflake Connector
+
         run: |
-          wget https://sfc-repo.snowflakecomputing.com/snowsql/bootstrap/1.2/linux_x86_64/snowsql-1.2.33-linux_x86_64.bash
-          bash snowsql-1.2.33-linux_x86_64.bash
-          
-      # Execute SQL Files
+          pip install snowflake-connector-python
+
+      # Deploy SQL Files
       - name: Deploy Snowflake Objects
 
         env:
@@ -49,28 +48,54 @@ jobs:
           SNOWFLAKE_USER: ${{ secrets.SNOWFLAKE_USER }}
           SNOWFLAKE_PASSWORD: ${{ secrets.SNOWFLAKE_PASSWORD }}
           SNOWFLAKE_WAREHOUSE: ${{ secrets.SNOWFLAKE_WAREHOUSE }}
+          ENV: ${{ env.ENV }}
 
         run: |
 
-          echo "Starting deployment for environment: $ENV"
+          python <<EOF
 
-          while read line
-          do
+          import snowflake.connector
+          import os
 
-            # Skip comments
-            [[ "$line" == --* ]] && continue
+          print(f"Starting deployment for environment: {os.environ['ENV']}")
 
-            # Skip empty lines
-            [[ -z "$line" ]] && continue
+          conn = snowflake.connector.connect(
+              user=os.environ['SNOWFLAKE_USER'],
+              password=os.environ['SNOWFLAKE_PASSWORD'],
+              account=os.environ['SNOWFLAKE_ACCOUNT'],
+              warehouse=os.environ['SNOWFLAKE_WAREHOUSE']
+          )
 
-            echo "Executing file: $line"
+          cursor = conn.cursor()
 
-            snowsql \
-              -a $SNOWFLAKE_ACCOUNT \
-              -u $SNOWFLAKE_USER \
-              -p $SNOWFLAKE_PASSWORD \
-              -w $SNOWFLAKE_WAREHOUSE \
-              -D env=$ENV \
-              -f "$line"
+          hierarchy_file = "RETAIL_ANALYTICS_RAW/object_hierarchy.txt"
 
-          done < RETAIL_ANALYTICS_RAW/object_hierarchy.txt
+          with open(hierarchy_file, "r") as f:
+
+              for line in f:
+
+                  line = line.strip()
+
+                  # Skip comments
+                  if line.startswith("--") or line == "":
+                      continue
+
+                  print(f"Executing file: {line}")
+
+                  with open(line, "r") as sql_file:
+
+                      sql = sql_file.read()
+
+                      # Replace environment variable
+                      sql = sql.replace("&{env}", os.environ['ENV'])
+
+                      cursor.execute(sql)
+
+                      print("SUCCESS")
+
+          cursor.close()
+          conn.close()
+
+          print("Deployment completed successfully.")
+
+          EOF
