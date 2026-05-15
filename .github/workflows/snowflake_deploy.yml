@@ -96,6 +96,6 @@ jobs:
           cursor.close()
           conn.close()
 
-          print("Deployment completed successfully.")
+          print("Deployment completed successfully")
 
           EOF
