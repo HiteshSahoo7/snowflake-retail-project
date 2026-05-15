@@ -1,0 +1,75 @@
+name: Snowflake Deployment
+
+on:
+  push:
+    branches:
+      - development
+      - uat
+      - main
+
+      
+jobs:
+
+  deploy:
+
+    runs-on: ubuntu-latest
+
+    steps:
+
+      # Checkout Code
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      # Set Environment Name
+      - name: Set Deployment Environment
+        run: |
+
+          if [[ "${GITHUB_REF_NAME}" == "development" ]]; then
+            echo "ENV=DEV" >> $GITHUB_ENV
+
+          elif [[ "${GITHUB_REF_NAME}" == "uat" ]]; then
+            echo "ENV=UAT" >> $GITHUB_ENV
+
+          elif [[ "${GITHUB_REF_NAME}" == "main" ]]; then
+            echo "ENV=PRD" >> $GITHUB_ENV
+
+          fi
+
+      # Install SnowSQL
+      - name: Install SnowSQL
+        run: |
+          pip install snowflake-cli-labs
+
+      # Execute SQL Files
+      - name: Deploy Snowflake Objects
+
+        env:
+          SNOWFLAKE_ACCOUNT: ${{ secrets.SNOWFLAKE_ACCOUNT }}
+          SNOWFLAKE_USER: ${{ secrets.SNOWFLAKE_USER }}
+          SNOWFLAKE_PASSWORD: ${{ secrets.SNOWFLAKE_PASSWORD }}
+          SNOWFLAKE_WAREHOUSE: ${{ secrets.SNOWFLAKE_WAREHOUSE }}
+
+        run: |
+
+          echo "Starting deployment for environment: $ENV"
+
+          while read line
+          do
+
+            # Skip comments
+            [[ "$line" == --* ]] && continue
+
+            # Skip empty lines
+            [[ -z "$line" ]] && continue
+
+            echo "Executing file: $line"
+
+            snowsql \
+              -a $SNOWFLAKE_ACCOUNT \
+              -u $SNOWFLAKE_USER \
+              -p $SNOWFLAKE_PASSWORD \
+              -w $SNOWFLAKE_WAREHOUSE \
+              -D env=$ENV \
+              -f "$line"
+
+          done < RETAIL_ANALYTICS_RAW/object_hierarchy.txt

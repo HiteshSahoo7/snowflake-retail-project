@@ -1,0 +1,6 @@
+CREATE OR REPLACE TABLE RETAIL_ANALYTICS_RAW_&{env}.SALES_PLANNING.TB_PRODUCTS (
+    product_id INT,
+    product_name VARCHAR(255),
+    category VARCHAR(255),
+    price NUMBER(10,2)
+);
